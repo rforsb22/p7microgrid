@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  microgrid:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    command: python simulator/run_sim.py

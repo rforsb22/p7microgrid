@@ -1,0 +1,20 @@
+battery:
+  max_capacity_kwh: 10
+  max_charge_kw: 5
+  max_discharge_kw: 5
+  efficiency: 0.92
+  init_soc: 0.5
+genset:
+  min_kw: 0
+  max_kw: 20
+  variable_cost_per_kwh: 1.0
+load:
+  csv_path: ""
+renewables:
+  pv_capacity_kw: 5
+  wind_capacity_kw: 10
+market:
+  area: ${PRICE_AREA}
+  co2_weight: 0.0
+  price_weight: 1.0
+  max_hours: 48
