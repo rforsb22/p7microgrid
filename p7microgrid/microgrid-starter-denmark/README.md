@@ -25,3 +25,6 @@ http://127.0.0.1:8000/battery/status
 
 # api/docs
 http://127.0.0.1:8000/docs
+
+
+##  virker lortet nu
