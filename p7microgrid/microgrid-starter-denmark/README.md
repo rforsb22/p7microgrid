@@ -1,18 +1,28 @@
 ## Quick start
-# Run from repo root:
+# Run from root of microgrid-starter-denmark
 # (optional) reuse your existing .venv
 python -m venv .venv
-source .venv/bin/activate
-
-pip install -r requirements-api.txt
+.\.venv\Scripts\Activate.ps1
 uvicorn api.main:app --reload
 
-# open site
+# Deactivate venv
+deactivate
+
+# verify you're in the venv
+python -c "import sys; print(sys.executable)"
+
+# install libs your script uses
+python -m pip install --upgrade pip
+python -m pip install requests pandas numpy python-dotenv
+
+# open battery status site
 http://127.0.0.1:8000/battery/status
 
-# api/docs
+# open api/docs
 http://127.0.0.1:8000/docs
 
+# File exists.
+pip install -r requirements-api.txt
 
 
 # Microgrid Starter (Denmark)

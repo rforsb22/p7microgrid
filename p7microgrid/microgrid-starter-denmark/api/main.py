@@ -20,6 +20,51 @@ def forecast_power():
     rows = load_forecast()
     return [{"ts": r["ts"], "wind_ms": r["wind_ms"], "wind_kw": r["wind_kw"]} for r in rows]
 
+from typing import Optional
+from fastapi import Query
+from datetime import datetime, timezone
+from .services.weather import load_forecast, current_power
+
+# ...
+
+@app.get("/power/current")
+def power_current(load_kw: float = Query(0.0, ge=0.0)):
+    """
+    Returns current available wind kW, plus net against an optional requested load.
+    """
+    cur = current_power(now_utc=datetime.now(timezone.utc))
+    if not cur.get("available"):
+        return {"available": False, "reason": cur.get("reason", "unknown")}
+
+    wind_kw = float(cur["wind_kw"])
+    net_kw = wind_kw - load_kw
+    return {
+        "available": True,
+        "now_utc": cur["now_utc"],
+        "wind_kw": wind_kw,
+        "wind_ms": float(cur["wind_ms"]),
+        "requested_load_kw": float(load_kw),
+        "net_kw": net_kw,
+        "meets_load": net_kw >= 0,
+        "source_window": cur["source_window"],
+    }
+
+@app.get("/health/edr")
+def health_edr():
+    """
+    Quick health: how many points, and time range loaded.
+    """
+    rows = load_forecast()
+    if not rows:
+        return {"ok": False, "points": 0}
+    return {
+        "ok": True,
+        "points": len(rows),
+        "start_utc": rows[0]["ts"].isoformat(),
+        "end_utc": rows[-1]["ts"].isoformat(),
+    }
+
+
 @app.get("/battery/status", response_model=BatteryStatus)
 def battery_status():
     return BatteryStatus(**bat.status(as_of=datetime.now(timezone.utc)))
