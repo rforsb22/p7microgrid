@@ -3,7 +3,15 @@
 # (optional) reuse your existing .venv
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+
+# Run to get lastest weather data from API -> Check data/weather_wind.json
+python ./scripts/fetch_weather.py
+
+# Run main to laod FAST API
 uvicorn api.main:app --reload
+
+
+
 
 # Deactivate venv
 deactivate
