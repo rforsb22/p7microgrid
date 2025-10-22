@@ -7,11 +7,8 @@ python -m venv .venv
 # Run to get lastest weather data from API -> Check data/weather_wind.json
 python ./scripts/fetch_weather.py
 
-# Run main to laod FAST API
+# Run main to load FAST API
 uvicorn api.main:app --reload
-
-
-
 
 # Deactivate venv
 deactivate
@@ -33,10 +30,7 @@ http://127.0.0.1:8000/docs
 pip install -r requirements-api.txt
 
 
-# Microgrid Starter (Denmark)
-Quick local microgrid sim using python-microgrid + Energi Data Service (prices) + DMI-based wind via Open-Meteo.
-## Quick start OLD
-python -m venv .venv
+
 # Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt

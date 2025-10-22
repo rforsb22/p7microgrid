@@ -94,3 +94,104 @@ def current_power(now_utc: Optional[datetime] = None) -> Dict[str, Any]:
         "wind_kw": wind_kw,
         "source_window": src,
     }
+
+# --- Historic power helper ----------------------------------------------------
+from typing import Optional, Dict, Any, List
+from zoneinfo import ZoneInfo
+from datetime import timedelta
+
+EU_CPH = ZoneInfo("Europe/Copenhagen")
+
+def _parse_when(s: Optional[str], default: Optional[datetime] = None) -> Optional[datetime]:
+    """Parse ISO8601; if naive, assume Europe/Copenhagen, then convert to UTC."""
+    if s is None:
+        return default
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=EU_CPH)
+    return dt.astimezone(timezone.utc)
+
+def _integrate_energy_kwh(points: List[Dict[str, Any]], key: str) -> float:
+    """Simple trapezoidal integration over (possibly uneven) time deltas."""
+    if len(points) < 2:
+        return 0.0
+    total = 0.0
+    for i in range(1, len(points)):
+        t0, t1 = points[i-1]["ts"], points[i]["ts"]
+        p0, p1 = float(points[i-1][key]), float(points[i][key])
+        dh = (t1 - t0).total_seconds() / 3600.0
+        if dh > 0:
+            total += 0.5 * (p0 + p1) * dh
+    return total
+
+def historic_power(
+    start_utc: Optional[datetime] = None,
+    end_utc: Optional[datetime] = None,
+    load_kw: float = 0.0,
+    now_utc: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """
+    Returns historical wind kW and net kW for the window [start_utc, end_utc].
+    If start/end are None, defaults to last 24 hours ending at now.
+    Only includes points <= now (no future).
+    """
+    rows = load_forecast()  # [{"ts": UTC datetime, "wind_ms": float, "wind_kw": float}, ...]
+    if not rows:
+        return {"ok": False, "reason": "no_forecast", "points": []}
+
+    now = now_utc or datetime.now(timezone.utc)
+    # Default window: last 24h
+    if end_utc is None:
+        end_utc = now
+    if start_utc is None:
+        start_utc = end_utc - timedelta(hours=24)
+
+    # Clamp to available + not in future
+    start_utc = max(start_utc, rows[0]["ts"])
+    end_utc = min(end_utc, rows[-1]["ts"], now)
+    if start_utc >= end_utc:
+        return {"ok": True, "points": [], "start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()}
+
+    # Filter
+    series = [r for r in rows if start_utc <= r["ts"] <= end_utc]
+
+    # Build output points with net
+    pts = []
+    for r in series:
+        wind_kw = float(r["wind_kw"])
+        pts.append({
+            "ts": r["ts"],
+            "wind_ms": float(r["wind_ms"]),
+            "wind_kw": wind_kw,
+            "net_kw": wind_kw - load_kw,
+            "meets_load": wind_kw >= load_kw,
+        })
+
+    # Summary stats
+    if pts:
+        avg_wind_kw = sum(p["wind_kw"] for p in pts) / len(pts)
+        min_wind_kw = min(p["wind_kw"] for p in pts)
+        max_wind_kw = max(p["wind_kw"] for p in pts)
+        energy_wind_kwh = _integrate_energy_kwh(pts, "wind_kw")
+        # Net is just (wind_kw - load_kw) integrated
+        # An easy way: integrate wind then subtract load * hours
+        hours = (pts[-1]["ts"] - pts[0]["ts"]).total_seconds() / 3600.0
+        energy_net_kwh = energy_wind_kwh - load_kw * max(0.0, hours)
+    else:
+        avg_wind_kw = min_wind_kw = max_wind_kw = energy_wind_kwh = energy_net_kwh = 0.0
+
+    return {
+        "ok": True,
+        "start_utc": start_utc.isoformat(),
+        "end_utc": end_utc.isoformat(),
+        "load_kw": float(load_kw),
+        "points": pts,  # ts are UTC datetimes; FastAPI will serialize to ISO
+        "summary": {
+            "avg_wind_kw": avg_wind_kw,
+            "min_wind_kw": min_wind_kw,
+            "max_wind_kw": max_wind_kw,
+            "energy_wind_kwh": energy_wind_kwh,
+            "energy_net_kwh": energy_net_kwh,
+        },
+    }
+

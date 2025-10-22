@@ -1,10 +1,14 @@
 from fastapi import FastAPI, HTTPException, Query
-from datetime import datetime, timezone
+
 from .models import BatteryStatus, RuntimeRequest, RuntimeEstimate, PowerPoint, GreenWindow
 from .services.weather import load_forecast
 from .services.battery import BatterySim
 from .services.schedule import green_windows
 from .models import SocTargetsRequest, SocTargetETA
+from typing import Optional
+from fastapi import Query
+from datetime import datetime, timezone, timedelta
+from .services.weather import historic_power, EU_CPH
 
 app = FastAPI(title="P7 Microgrid API", version="0.1.0")
 
@@ -48,6 +52,53 @@ def power_current(load_kw: float = Query(0.0, ge=0.0)):
         "meets_load": net_kw >= 0,
         "source_window": cur["source_window"],
     }
+
+@app.get("/power/historic")
+def power_historic(
+    load_kw: float = Query(0.0, ge=0.0),
+    start: Optional[str] = Query(None, description="ISO time; if naive, treated as Europe/Copenhagen and converted to UTC"),
+    end: Optional[str] = Query(None, description="ISO time; if naive, treated as Europe/Copenhagen and converted to UTC"),
+    hours: int = Query(24, ge=1, le=168, description="Used only if start/end not provided; last N hours"),
+):
+    """
+    Returns historical wind power points and net kW over a time window.
+
+    Priority:
+      - If start and end are provided, use that range.
+      - Else use 'hours' ending at now (default 24h).
+    """
+    now = datetime.now(timezone.utc)
+
+    def parse_dt(s: Optional[str], default: Optional[datetime]) -> Optional[datetime]:
+        if s is None:
+            return default
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=EU_CPH)
+        return dt.astimezone(timezone.utc)
+
+    if start or end:
+        start_dt = parse_dt(start, None)
+        end_dt = parse_dt(end, now if start_dt is not None else None)
+        if start_dt is None or end_dt is None:
+            # fallback if only one is given
+            end_dt = end_dt or now
+            start_dt = start_dt or (end_dt - timedelta(hours=hours))
+    else:
+        end_dt = now
+        start_dt = now - timedelta(hours=hours)
+
+    return historic_power(start_dt, end_dt, load_kw=load_kw, now_utc=now)
+
+
+
+
+
+
+
+
+
+
 
 @app.get("/health/edr")
 def health_edr():
