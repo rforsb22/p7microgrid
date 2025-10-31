@@ -1,0 +1,40 @@
+{
+  "cols": [
+    "acfrequency",
+    "activepower",
+    "currentsummationdelivered",
+    "entity_id",
+    "entity_type",
+    "fiware_servicepath",
+    "instantaneousdemand",
+    "networklinkaddress",
+    "networklinkstrength",
+    "onoff",
+    "reactivepower",
+    "rmscurrent",
+    "rmsvoltage",
+    "time_index",
+    "timeinstant"
+  ],
+  "rows": [
+    [
+      50.02,
+      0.0,
+      2541.0,
+      "urn:ngsi-ld:SmartPlug:0015BC002F005AC1",
+      "SmartPlug",
+      "/",
+      0.0,
+      "1",
+      100.0,
+      0.0,
+      0.0,
+      0.0,
+      225.01,
+      1761642826000,
+      1761642826000
+    ]
+  ],
+  "rowcount": 1,
+  "duration": 3.742678
+}
