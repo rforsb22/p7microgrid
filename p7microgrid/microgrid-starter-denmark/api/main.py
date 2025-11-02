@@ -8,6 +8,10 @@ from typing import Optional
 from fastapi import Query
 from datetime import datetime, timezone
 from .services.weather import load_forecast, current_power
+from .services.wind_forecast import forecast_wind_power
+from .services.wind_live import current_wind_power as live_obs
+from .services.wind_forecast import forecast_wind_power as live_fc
+
 
 from dotenv import load_dotenv
 from .services.solar_pvgis import historic_pv_kw
@@ -147,38 +151,116 @@ def _find_windows(
 
 
 
-@app.get("/forecast/power", response_model=list[PowerPoint])
-def forecast_power():
-    rows = load_forecast()
-    return [{"ts": r["ts"], "wind_ms": r["wind_ms"], "wind_kw": r["wind_kw"]} for r in rows]
+@app.get("/wind/forecast_live")
+def wind_forecast_live(
+    hours: int = Query(48, ge=1, le=168),
+    lat: float = Query(57.0488),
+    lon: float = Query(9.9217),
+):
+    points = forecast_wind_power(lat, lon, hours=hours)
+    return {"ok": True, "hours": hours, "points": points}
 
-@app.get("/power/current")
-def power_current(load_kw: float = Query(0.0, ge=0.0)):
-    """
-    Returns current available wind kW, plus net against an optional requested load.
-    """
-    cur = current_power(now_utc=datetime.now(timezone.utc))
-    if not cur.get("available"):
-        return {"available": False, "reason": cur.get("reason", "unknown")}
+@app.get("/power/combined_forecast")
+def power_combined_forecast(
+    load_kw: float = Query(0.0, ge=0.0),
+    hours: int = Query(24, ge=1, le=72),
+    # location
+    lat: float = Query(57.0488),
+    lon: float = Query(9.9217),
+    # PV params (PVGIS proxy)
+    peak_kwp: float = Query(2.0, ge=0.1),
+    tilt_deg: float = Query(35.0),
+    azimuth_deg: float = Query(0.0),
+    losses_pct: float = Query(14.0, ge=0.0, le=40.0),
+):
+    # wind forecast (hourly)
+    wind = forecast_wind_power(lat, lon, hours=hours)           # [{ts, wind_ms, wind_kw}]
+    if not wind:
+        return {"ok": False, "reason": "no_wind_forecast"}
+    start_dt, end_dt = wind[0]["ts"], wind[-1]["ts"]
 
-    wind_kw = float(cur["wind_kw"])
-    net_kw = wind_kw - load_kw
-    return {
-        "available": True,
-        "now_utc": cur["now_utc"],
-        "wind_kw": wind_kw,
-        "wind_ms": float(cur["wind_ms"]),
-        "requested_load_kw": float(load_kw),
-        "net_kw": net_kw,
-        "meets_load": net_kw >= 0,
-        "source_window": cur["source_window"],
-    }
+    # solar proxy from PVGIS for covering years (take same months/days across years)
+    solar_all = historic_pv_kw(lat, lon, peak_kwp, tilt_deg, azimuth_deg, losses_pct, start_dt.year, end_dt.year)
+    # nearest-join on wind timestamps
+    from bisect import bisect_left
+    s_ts = [r["ts"] for r in solar_all]
+    def nearest_solar_kw(ts):
+        if not s_ts: return 0.0
+        i = bisect_left(s_ts, ts)
+        if i <= 0: return float(solar_all[0]["pv_kw"])
+        if i >= len(solar_all): return float(solar_all[-1]["pv_kw"])
+        before, after = solar_all[i-1], solar_all[i]
+        return float(before["pv_kw"] if (ts - before["ts"]) <= (after["ts"] - ts) else after["pv_kw"])
+
+    points = []
+    for w in wind:
+        skw = nearest_solar_kw(w["ts"])
+        tot = float(w["wind_kw"]) + skw
+        points.append({
+            "ts": w["ts"],
+            "wind_kw": float(w["wind_kw"]),
+            "solar_kw": skw,
+            "total_kw": tot,
+            "net_kw": tot - load_kw,
+            "meets_load": tot >= load_kw,
+        })
+    return {"ok": True, "start_utc": start_dt.isoformat(), "end_utc": end_dt.isoformat(),
+            "load_kw": float(load_kw), "points": points}
+
+
+@app.get("/power/current_wind_vs_load")
+def power_current_wind_vs_load(
+    load_kw: float = Query(0.0, ge=0.0),
+    lat: float = Query(57.0488),
+    lon: float = Query(9.9217),
+    station_id: str | None = Query(None)
+):
+    """
+    'Current' wind vs load:
+      1) Try latest DMI metObs (observed).
+      2) If none available (e.g., outage), fall back to first hour of DMI forecast.
+    """
+    # 1) Observed (metObs)
+    obs = live_obs(lat, lon, station_id)
+    if obs.get("available"):
+        wind_kw = float(obs["wind_kw"])
+        net_kw = wind_kw - load_kw
+        return {
+            "available": True,
+            "now_utc": obs["now_utc"],
+            "source": {"type": "observed", **obs.get("source", {})},
+            "wind_ms": float(obs["wind_ms"]),
+            "wind_kw": wind_kw,
+            "requested_load_kw": float(load_kw),
+            "net_kw": net_kw,
+            "meets_load": net_kw >= 0,
+        }
+
+    # 2) Forecast fallback (first forecast hour)
+    fc = live_fc(lat, lon, hours=1)
+    if fc:
+        first = fc[0]
+        wind_kw = float(first["wind_kw"])
+        net_kw = wind_kw - load_kw
+        return {
+            "available": True,
+            "now_utc": first["ts"].isoformat(),
+            "source": {"type": "forecast", "provider": "dmi_edr"},
+            "wind_ms": float(first["wind_ms"]),
+            "wind_kw": wind_kw,
+            "requested_load_kw": float(load_kw),
+            "net_kw": net_kw,
+            "meets_load": net_kw >= 0,
+        }
+
+    # No data at all
+    return {"available": False, "reason": "no_observation_or_forecast"}
 
 @app.get("/power/historic")
 def power_historic(
     load_kw: float = Query(0.0, ge=0.0),
-    start: Optional[str] = Query(None, description="ISO time; if naive, treated as Europe/Copenhagen and converted to UTC"),
-    end: Optional[str] = Query(None, description="ISO time; if naive, treated as Europe/Copenhagen and converted to UTC"),
+    start: Optional[str] = Query(None, description="ISO8601, e.g. '2025-03-01T00:00:00'. Naive → Europe/Copenhagen."),
+    end: Optional[str] = Query(None, description="ISO8601, e.g. '2025-04-01T00:00:00'. Naive → Europe/Copenhagen."),
     hours: int = Query(24, ge=1, le=168, description="Used only if start/end not provided; last N hours"),
 ):
     """
@@ -386,8 +468,8 @@ def schedule_solar_historic(
     require_power_floor: bool = Query(False, description="Require PV power ≥ demand at every step"),
     step_minutes: int = Query(5, ge=1, le=60, description="Scheduling resolution"),
     # time window
-    start: str | None = Query(None, description="ISO8601; naive → Europe/Copenhagen"),
-    end: str | None = Query(None),
+    start: str | None = Query(None, description="ISO8601, e.g. '2025-03-01T00:00:00'. Naive → Europe/Copenhagen."),
+    end: str | None = Query(None, description="ISO8601, e.g. '2025-04-01T00:00:00'. Naive → Europe/Copenhagen."),
     hours: int = Query(24, ge=1, le=168),
     # PV params
     lat: float = Query(57.0488),
@@ -435,8 +517,8 @@ def schedule_wind_historic(
     duration_min: int = Query(..., gt=0),
     require_power_floor: bool = Query(False),
     step_minutes: int = Query(5, ge=1, le=60),
-    start: str | None = Query(None),
-    end: str | None = Query(None),
+    start: str | None = Query(None, description="ISO8601, e.g. '2025-03-01T00:00:00'. Naive → Europe/Copenhagen."),
+    end: str | None = Query(None, description="ISO8601, e.g. '2025-04-01T00:00:00'. Naive → Europe/Copenhagen."),
     hours: int = Query(24, ge=1, le=168),
     lat: float = Query(57.0488),
     lon: float = Query(9.9217),
