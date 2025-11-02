@@ -4,9 +4,6 @@
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# Run to get lastest weather data from API -> Check data/weather_wind.json
-python ./scripts/fetch_weather.py
-
 # Run main to load FAST API
 uvicorn api.main:app --reload
 
@@ -20,10 +17,7 @@ python -c "import sys; print(sys.executable)"
 python -m pip install --upgrade pip
 python -m pip install requests pandas numpy python-dotenv
 
-# open battery status site
-http://127.0.0.1:8000/battery/status
-
-# open api/docs
+# open swaggerUI
 http://127.0.0.1:8000/docs
 
 # File exists.
