@@ -3,3 +3,4 @@ uvicorn[standard]
 pydantic
 pandas
 python-dateutil
+python-dotenv
