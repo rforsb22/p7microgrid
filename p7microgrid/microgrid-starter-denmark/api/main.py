@@ -19,6 +19,11 @@ bat = BatterySim()
 def health():
     return {"ok": True}
 
+if __name__ == "__main__":
+    import uvicorn
+    # change host/port here
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
 @app.get("/forecast/power", response_model=list[PowerPoint])
 def forecast_power():
     rows = load_forecast()
