@@ -130,7 +130,7 @@ def fetch_dmi_edr(lat: float, lon: float, start_utc: str, end_utc: str) -> pd.Da
       - retries + longer timeouts
       - 48-hour chunking to keep responses light and avoid gateway timeouts
     """
-    api_key = os.getenv("DMI_API_KEY", "").strip()
+    api_key = os.getenv("DMI_API_KEY_EDR", "").strip()
     collection = os.getenv("DMI_COLLECTION", "harmonie_dini_sf").strip()
     # DMI parameters are hyphenated, e.g., wind-speed or wind-speed-10m
     param = os.getenv("DMI_PARAM", "wind-speed-10m").strip()

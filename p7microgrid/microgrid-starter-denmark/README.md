@@ -4,9 +4,6 @@
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# Run to get lastest weather data from API -> Check data/weather_wind.json
-python ./scripts/fetch_weather.py
-
 # Run main to load FAST API
 uvicorn api.main:app --reload
 
@@ -20,22 +17,20 @@ python -c "import sys; print(sys.executable)"
 python -m pip install --upgrade pip
 python -m pip install requests pandas numpy python-dotenv
 
-# open battery status site
-http://127.0.0.1:8000/battery/status
-
-# open api/docs
+# open swaggerUI
 http://127.0.0.1:8000/docs
 
 # File exists.
 pip install -r requirements-api.txt
 
-
+# PVGIS API
+PVGIS seriescalc is the official non-interactive API 
+for hourly PV output, where peakpower is system size in kWp,
+angle/aspect are tilt/azimuth, and loss is % losses. 
+This endpoint is documented by the JRC (PVGIS 5.3 API entry 
+points and tool names).
 
 # Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env
-# edit .env (PRICE_AREA=DK1 or DK2; optional LAT/LON)
-python scripts/fetch_energi_prices.py
-python scripts/fetch_weather.py
-python simulator/run_sim.py
